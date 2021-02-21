@@ -1,5 +1,9 @@
 //! Structures and types used in the main chess engine.
 
+use super::constants::{DIAGONALS, KING_MOVES, KNIGHT_MOVES, NON_DIAGONALS};
+use std::collections::HashSet;
+use std::hash::Hash;
+
 /// All non-graphical game state
 #[derive(Clone, druid::Data)]
 pub struct ChessState {
@@ -60,6 +64,7 @@ impl ChessState {
     }
 
     /// If passed a valid move, update the state accordingly
+    ///
     /// Return whether or not the move was valid.
     pub fn make_move(&mut self, chess_move: &Move) -> bool {
         if self.is_move_valid(&chess_move) {
@@ -78,7 +83,7 @@ impl ChessState {
     /// state.
     fn is_move_valid(&self, chess_move: &Move) -> bool {
         // The moving piece must be of the same colour as the player_turn
-        let _piece = match self.pieces[chess_move.from.get_idx()] {
+        let piece = match self.pieces[chess_move.from.get_idx()] {
             None => return false,
             Some(piece) => {
                 if piece.player != self.player_turn {
@@ -89,15 +94,11 @@ impl ChessState {
             }
         };
 
-        // The square which the piece is moving to must not be a piece of the
-        // same colour
-        if let Some(capture) = self.pieces[chess_move.to.get_idx()] {
-            if capture.player == self.player_turn {
-                return false;
-            }
-        };
-
-        // TODO: Check this type of piece can make this move
+        // Check that this move is valid for this given piece (includes
+        // checking for self-captures)
+        if !self.is_move_valid_for_piece(chess_move, &piece) {
+            return false;
+        }
         // TODO: Check if the player is in check, or making this move would put
         // the player in check.
         // TODO: Check castling rights/allow castling
@@ -106,6 +107,18 @@ impl ChessState {
 
         // If these conditions are satisfied, this is a legal move
         true
+    }
+
+    /// Check that a given move is valid for a given piece
+    /// 
+    /// Includes
+    /// - checking for self-captures
+    /// - all pawn moves (promotion and en passant TODO)
+    fn is_move_valid_for_piece(&self, chess_move: &Move, piece: &Piece) -> bool {
+        piece
+            .all_moves(&self, &chess_move.from)
+            .iter()
+            .any(|m| m == chess_move)
     }
 }
 
@@ -131,6 +144,133 @@ pub struct Piece {
     pub kind: PieceKind,
 }
 
+impl Piece {
+    /// Get all moves that this piece can take
+    ///
+    /// - TODO: En passant
+    /// - TODO: Castling
+    /// - TODO: Checks (should maybe be done before?)
+    fn all_moves(&self, state: &ChessState, position: &Square) -> HashSet<Move> {
+        match self.kind {
+            PieceKind::Pawn => {
+                // White pawns move up, black pawns move down
+                let direction: isize = if self.player == Player::White { 1 } else { -1 };
+                let mut moves = vec![Vec2 {
+                    delta_f: 0,
+                    delta_r: direction,
+                }];
+
+                // If on the second (white) or seventh (black) rank, can move 2 squares.
+                if position.rank == Rank::R2 && self.player == Player::White
+                    || position.rank == Rank::R7 && self.player == Player::Black
+                {
+                    moves.push(Vec2 {
+                        delta_f: 0,
+                        delta_r: 2 * direction,
+                    });
+                }
+
+                // Pawns capture one square diagonally
+                for possible_capture in [
+                    Vec2 {
+                        delta_f: -1,
+                        delta_r: direction,
+                    },
+                    Vec2 {
+                        delta_f: 1,
+                        delta_r: direction,
+                    },
+                ]
+                .iter()
+                {
+                    if let Some(sq) = possible_capture + position {
+                        if state.pieces[sq.get_idx()].is_some()
+                            && state.pieces[sq.get_idx()].unwrap().player != self.player
+                        {
+                            moves.push(*possible_capture)
+                        }
+                    }
+                }
+
+                // TODO: en passant
+
+                gen_moves(position, &moves, false, &state.pieces, &self.player)
+            }
+            PieceKind::Bishop => gen_moves(position, &DIAGONALS, true, &state.pieces, &self.player),
+            PieceKind::Knight => {
+                gen_moves(position, &KNIGHT_MOVES, false, &state.pieces, &self.player)
+            }
+            PieceKind::Rook => {
+                gen_moves(position, &NON_DIAGONALS, true, &state.pieces, &self.player)
+            }
+            PieceKind::King => gen_moves(position, &KING_MOVES, false, &state.pieces, &self.player),
+            PieceKind::Queen => gen_moves(position, &KING_MOVES, true, &state.pieces, &self.player),
+        }
+    }
+}
+
+/// Generate all moves possible given
+/// - a piece position and colour,
+/// - the set of "single" moves the piece can make (directions)
+/// - whether or not the piece can move "repeatedly" (i.e. queen, bishop, rook)
+///   or just once (pawn, king, knight)
+/// - the board state
+fn gen_moves(
+    position: &Square,
+    directions: &[Vec2],
+    repeat: bool,
+    pieces: &[Option<Piece>],
+    player: &Player,
+) -> HashSet<Move> {
+    let mut all_moves = HashSet::new();
+    for direction in directions.iter() {
+        if let Some(to) = direction + position {
+            // Square is inside the board
+            let capture =
+                pieces[to.get_idx()].is_some() && pieces[to.get_idx()].unwrap().player != *player;
+            if pieces[to.get_idx()].is_none() || capture {
+                all_moves.insert(Move {
+                    from: *position,
+                    to,
+                });
+                if capture {
+                    // Can't keep going after a capture
+                    continue;
+                }
+            } else {
+                // Can't take our own coloured piece
+                continue;
+            }
+        } else {
+            // Square outside the board
+            continue;
+        }
+
+        if repeat {
+            // Keep going, until we can't anymore in this direction
+            let mut new_pos = (direction + position).unwrap();
+            while let Some(to) = direction + &new_pos {
+                let capture = pieces[to.get_idx()].is_some()
+                    && pieces[to.get_idx()].unwrap().player != *player;
+                if pieces[to.get_idx()].is_none() || capture {
+                    all_moves.insert(Move {
+                        from: *position,
+                        to,
+                    });
+                    if capture {
+                        // Can't keep going past a capture
+                        break;
+                    }
+                    new_pos = to;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    all_moves
+}
+
 /// All of the possible kinds of pieces (colour-independent)
 #[derive(Clone, Copy, PartialEq, Eq, Debug, druid::Data)]
 #[allow(missing_docs)]
@@ -144,7 +284,7 @@ pub enum PieceKind {
 }
 
 /// That's right, it's a square
-#[derive(Copy, Clone, PartialEq, Eq, druid::Data, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, druid::Data, Debug, Hash)]
 pub struct Square {
     /// This square's file
     pub file: File,
@@ -159,10 +299,29 @@ impl Square {
         let rank_idx = self.rank.get_idx();
         8 * rank_idx + file_idx
     }
+
+    /// Construct a square given the unique index.
+    pub fn from_idxs(file_idx: isize, rank_idx: isize) -> Option<Self> {
+        if file_idx < 0 || file_idx > 7 || rank_idx < 0 || rank_idx > 7 {
+            // Out of bounds
+            return None;
+        }
+        let file = File::from_idx(file_idx as usize);
+        let rank = Rank::from_idx(rank_idx as usize);
+        if let Some(file) = file {
+            if let Some(rank) = rank {
+                Some(Square { file, rank })
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
 }
 
 /// No way, it's all the different files
-#[derive(Copy, Clone, Debug, PartialEq, Eq, druid::Data)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, druid::Data, Hash)]
 #[allow(missing_docs)]
 pub enum File {
     A,
@@ -209,7 +368,7 @@ impl File {
 }
 
 /// You'd better believe these bad boys are all the possible ranks
-#[derive(Copy, Clone, Debug, PartialEq, Eq, druid::Data)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, druid::Data, Hash)]
 #[allow(missing_docs)]
 pub enum Rank {
     R1,
@@ -296,10 +455,76 @@ impl Player {
 }
 
 /// Representation of a chess move
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Move {
     /// The square that the piece has been moved from
     pub from: Square,
     /// The square that the piece is moving to
     pub to: Square,
+}
+
+/// A vector on the board, as specified by a signed number of file and rank
+/// steps
+#[derive(Copy, Clone, Debug)]
+pub struct Vec2 {
+    /// How many ranks upwards
+    pub delta_r: isize,
+    /// How many files right
+    pub delta_f: isize,
+}
+
+impl std::ops::Add<&Vec2> for &Vec2 {
+    type Output = Vec2;
+
+    fn add(self, other: &Vec2) -> Vec2 {
+        Vec2 {
+            delta_r: self.delta_r + other.delta_r,
+            delta_f: self.delta_f + other.delta_f,
+        }
+    }
+}
+
+impl std::ops::Add<&Square> for &Vec2 {
+    type Output = Option<Square>;
+
+    fn add(self, other: &Square) -> Option<Square> {
+        let file_idx = other.file.get_idx() as isize + self.delta_f;
+        let rank_idx = other.rank.get_idx() as isize + self.delta_r;
+        Square::from_idxs(file_idx, rank_idx)
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Tests
+// Possibly worth writing more of these
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_queen_moves() {
+        let mut state = ChessState::new_game();
+        state.pieces = [None; 64];
+        let white_queen = Piece {
+            player: Player::White,
+            kind: PieceKind::Queen,
+        };
+        let black_queen = Piece {
+            player: Player::Black,
+            kind: PieceKind::Queen,
+        };
+        let d5 = Square {
+            file: File::D,
+            rank: Rank::R5,
+        };
+        let b3 = Square {
+            file: File::B,
+            rank: Rank::R3,
+        };
+        state.pieces[d5.get_idx()] = Some(white_queen);
+        state.pieces[b3.get_idx()] = Some(black_queen);
+
+        assert_eq!(white_queen.all_moves(&state, &d5).len(), 26);
+        assert_eq!(black_queen.all_moves(&state, &b3).len(), 20);
+    }
 }
