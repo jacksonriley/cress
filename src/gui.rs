@@ -1,7 +1,6 @@
 //! Run a simple chess GUI using [`druid`]. No real options yet, just call
 //! [`main`].
 
-
 use druid::{
     kurbo::TranslateScale,
     widget::{Align, SvgData},
@@ -9,10 +8,9 @@ use druid::{
     LifeCycleCtx, PaintCtx, Point, Rect, RenderContext, Size, UpdateCtx, Widget, WindowDesc,
 };
 
+use crate::engine::{ChessState, File, Move, Piece, PieceKind, Player, Rank, Square};
 use std::rc::Rc;
 use std::str::FromStr;
-
-use crate::engine::{ChessState, File, Piece, PieceKind, Player, Rank, Square};
 
 // Constants
 /// RGB colour of the white squares
@@ -25,7 +23,7 @@ const BOARD_SCALE: f64 = 0.9;
 /// Main GUI function.
 ///
 /// Creates the window, loads the chess piece svg files, and launches the app.
-pub fn main() {
+pub fn main(mode: Mode) {
     let main_window = WindowDesc::new(ui_builder)
         .title("Cress")
         .window_size((700.0, 700.0));
@@ -52,9 +50,10 @@ pub fn main() {
     let player = Player::White;
 
     let game = ChessGame {
-        state: Rc::new(state),
+        state,
         piece_svgs,
         player,
+        mode,
     };
 
     AppLauncher::with_window(main_window)
@@ -68,11 +67,13 @@ pub fn main() {
 #[derive(Clone, Data)]
 struct ChessGame {
     /// All of the non-graphical game state
-    state: Rc<ChessState>,
+    state: ChessState,
     /// The [`SvgData`] for each type of piece
     piece_svgs: Rc<[SvgData; 12]>,
     /// From which player's perspective the board should be drawn
     player: Player,
+    /// The game mode which is being played
+    mode: Mode,
 }
 
 /// The root widget - implements [`Widget`]<[`ChessGame`]>
@@ -88,15 +89,43 @@ struct ChessBoard {
     /// The width/height of the board, in pixels. This is dynamically
     /// determined by the window size in [`ChessBoard::layout`]
     board_length: f64,
+
+    /// The last square that was clicked, if any.
+    last_clicked: Option<Square>,
 }
 
 impl Widget<ChessGame> for ChessBoard {
-    fn event(&mut self, _ctx: &mut EventCtx, event: &Event, _game: &mut ChessGame, _env: &Env) {
-        // TODO - handle clicks and figure out the move
+    fn event(&mut self, ctx: &mut EventCtx, event: &Event, game: &mut ChessGame, _env: &Env) {
         // Call into the engine to get the response
         // Maybe need to call `ctx.request_paint()` after that returns?
         if let Event::MouseDown(mouse) = event {
-            dbg!(mouse);
+            if let Some(square_clicked) = self.get_square(mouse.pos, &game.player) {
+                println!("Clicked square {:?}", square_clicked);
+                if let Some(from) = self.last_clicked {
+                    // Make the move
+                    let chess_move = Move {
+                        from,
+                        to: square_clicked,
+                    };
+                    let valid = game.state.make_move(&chess_move);
+                    let valid_str = if valid { "valid" } else { "invalid" };
+                    println!("{:?} is {}", chess_move, valid_str);
+                    if valid {
+                        // Reorient board for two players
+                        if game.mode == Mode::TwoPlayer {
+                            game.player = game.player.swap();
+                        }
+
+                        // Redraw the board
+                        ctx.request_paint();
+                        self.last_clicked = None;
+                    } else {
+                        self.last_clicked = Some(square_clicked);
+                    }
+                } else {
+                    self.last_clicked = Some(square_clicked);
+                }
+            }
         }
     }
 
@@ -169,6 +198,73 @@ impl Widget<ChessGame> for ChessBoard {
     }
 }
 
+impl ChessBoard {
+    /// Figure out what square a click corresponds to
+    fn get_square(&self, mut click_pos: Point, player: &Player) -> Option<Square> {
+        // If Black, the origin is H1, if White, it's A8
+        let square_length = self.board_length / 8.0;
+        let origin = origin(0, 0, square_length);
+        let x_max = origin.x + self.board_length;
+        let y_max = origin.y + self.board_length;
+
+        // First, transform the Point to be White-orientated
+        if player == &Player::Black {
+            // If the coordinates from Black's perspective are (x, y), the
+            // coordinates from White's perspective are (x_max - x + origin.x, y_max - y + origin.y)
+            click_pos = Point::new(
+                x_max - click_pos.x + origin.x,
+                y_max - click_pos.y + origin.y,
+            );
+        }
+
+        // Check bounds
+        if origin.x <= click_pos.x
+            && x_max > click_pos.x
+            && origin.y <= click_pos.y
+            && y_max > click_pos.y
+        {
+            let file_idx = ((click_pos.x - origin.x) / square_length).floor() as usize;
+            let rank_idx = ((click_pos.y - origin.y) / square_length).floor() as usize;
+            let file = File::from_idx(file_idx).unwrap_or_else(|| {
+                panic!(
+                    "Already checked bounds so {} should be a valid file",
+                    file_idx
+                )
+            });
+            let rank = Rank::from_idx(7 - rank_idx).unwrap_or_else(|| {
+                panic!(
+                    "Already checked bounds so {} should be a valid file",
+                    file_idx
+                )
+            });
+            Some(Square { file, rank })
+        } else {
+            None
+        }
+    }
+}
+
+/// The modes that the GUI supports
+#[derive(Clone, Data, PartialEq, Debug)]
+pub enum Mode {
+    /// Two-player mode - the board swaps orientation after each move
+    TwoPlayer,
+    /// Computer mode - you play against the computer!
+    Computer,
+}
+
+impl FromStr for Mode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "2p" => Ok(Mode::TwoPlayer),
+            "comp" => Ok(Mode::Computer),
+            _ => Err(format!("Got an unexpected string for the mode: {}", s)),
+        }
+    }
+}
+
 //-----------------------------------------------------------------------------
 // Helper functions
 
@@ -228,4 +324,93 @@ fn draw_piece(svg: &SvgData, ctx: &mut PaintCtx, origin: Point, size: f64) {
     // Translate the piece to the correct square, and scale to the correct size
     let transform = TranslateScale::new(origin.to_vec2(), size / 45.0).into();
     svg.to_piet(transform, ctx);
+}
+
+// ----------------------------------------------------------------------------
+// Tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_get_square() {
+        let board_length = 100.0 * BOARD_SCALE;
+        let square_length = board_length / 8.0;
+        let board = ChessBoard {
+            board_length,
+            last_clicked: None,
+        };
+        let mut origin = origin(0, 0, square_length);
+        origin = Point::new(origin.x + 0.01, origin.y + 0.01);
+
+        // Outside the board
+        assert_eq!(board.get_square(Point::new(0.0, 0.0), &Player::White), None);
+        assert_eq!(
+            board.get_square(Point::new(100.0, 100.0), &Player::White),
+            None
+        );
+
+        // The origin
+        assert_eq!(
+            board.get_square(origin, &Player::White),
+            Some(Square {
+                file: File::A,
+                rank: Rank::R8
+            })
+        );
+        assert_eq!(
+            board.get_square(origin, &Player::Black),
+            Some(Square {
+                file: File::H,
+                rank: Rank::R1
+            })
+        );
+
+        // C3/F6 is 2.5 across, 5.5 down
+        let point = Point::new(
+            origin.x + 2.5 * square_length,
+            origin.y + 5.5 * square_length,
+        );
+        assert_eq!(
+            board.get_square(point, &Player::White),
+            Some(Square {
+                file: File::C,
+                rank: Rank::R3
+            })
+        );
+        assert_eq!(
+            board.get_square(point, &Player::Black),
+            Some(Square {
+                file: File::F,
+                rank: Rank::R6
+            })
+        );
+
+        // Test within top left square
+        for point in [
+            Point::new(
+                origin.x + square_length - 1.0,
+                origin.y + square_length - 1.0,
+            ),
+            Point::new(origin.x + 1.0, origin.y + 1.0),
+            Point::new(origin.x + square_length - 1.0, origin.y + 1.0),
+            Point::new(origin.x + 1.0, origin.y + square_length - 1.0),
+        ]
+        .iter()
+        {
+            assert_eq!(
+                board.get_square(*point, &Player::White),
+                Some(Square {
+                    file: File::A,
+                    rank: Rank::R8
+                })
+            );
+            assert_eq!(
+                board.get_square(*point, &Player::Black),
+                Some(Square {
+                    file: File::H,
+                    rank: Rank::R1
+                })
+            );
+        }
+    }
 }
