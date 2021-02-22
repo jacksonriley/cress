@@ -110,15 +110,14 @@ impl ChessState {
     }
 
     /// Check that a given move is valid for a given piece
-    /// 
+    ///
     /// Includes
     /// - checking for self-captures
     /// - all pawn moves (promotion and en passant TODO)
     fn is_move_valid_for_piece(&self, chess_move: &Move, piece: &Piece) -> bool {
         piece
             .all_moves(&self, &chess_move.from)
-            .iter()
-            .any(|m| m == chess_move)
+            .contains(chess_move)
     }
 }
 

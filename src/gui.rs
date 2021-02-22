@@ -54,6 +54,7 @@ pub fn main(mode: Mode) {
         piece_svgs,
         player,
         mode,
+        last_clicked: None,
     };
 
     AppLauncher::with_window(main_window)
@@ -74,6 +75,8 @@ struct ChessGame {
     player: Player,
     /// The game mode which is being played
     mode: Mode,
+    /// The last square that was clicked, if any.
+    last_clicked: Option<Square>,
 }
 
 /// The root widget - implements [`Widget`]<[`ChessGame`]>
@@ -84,24 +87,23 @@ struct ChessGame {
 /// - [update](ChessBoard::update): Updates the board appearance in response to a change in game state
 /// - [layout](ChessBoard::layout): Sets the size of the chessboard
 /// - [paint](ChessBoard::paint): Draw the board
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct ChessBoard {
     /// The width/height of the board, in pixels. This is dynamically
-    /// determined by the window size in [`ChessBoard::layout`]
+    /// determined by the window size in [`ChessBoard::layout`].
+    ///
+    /// Ideally this would be a field on ChessGame, but [`ChessBoard::layout`]
+    /// takes an immutable reference to ChessGame. Sad times.
     board_length: f64,
-
-    /// The last square that was clicked, if any.
-    last_clicked: Option<Square>,
 }
 
 impl Widget<ChessGame> for ChessBoard {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, game: &mut ChessGame, _env: &Env) {
-        // Call into the engine to get the response
-        // Maybe need to call `ctx.request_paint()` after that returns?
+        // TODO: for Mode::Computer, call into the engine to get the response
         if let Event::MouseDown(mouse) = event {
-            if let Some(square_clicked) = self.get_square(mouse.pos, &game.player) {
+            if let Some(square_clicked) = get_square(mouse.pos, self.board_length, &game.player) {
                 println!("Clicked square {:?}", square_clicked);
-                if let Some(from) = self.last_clicked {
+                if let Some(from) = game.last_clicked {
                     // Make the move
                     let chess_move = Move {
                         from,
@@ -118,12 +120,12 @@ impl Widget<ChessGame> for ChessBoard {
 
                         // Redraw the board
                         ctx.request_paint();
-                        self.last_clicked = None;
+                        game.last_clicked = None;
                     } else {
-                        self.last_clicked = Some(square_clicked);
+                        game.last_clicked = Some(square_clicked);
                     }
                 } else {
-                    self.last_clicked = Some(square_clicked);
+                    game.last_clicked = Some(square_clicked);
                 }
             }
         }
@@ -133,7 +135,7 @@ impl Widget<ChessGame> for ChessBoard {
         &mut self,
         _ctx: &mut LayoutCtx,
         bc: &BoxConstraints,
-        _data: &ChessGame,
+        _game: &ChessGame,
         _env: &Env,
     ) -> Size {
         let max_x = bc.max().width;
@@ -143,7 +145,6 @@ impl Widget<ChessGame> for ChessBoard {
         } else {
             self.board_length = max_x * BOARD_SCALE;
         }
-        dbg!(self);
         bc.max()
     }
 
@@ -165,7 +166,7 @@ impl Widget<ChessGame> for ChessBoard {
     ) {
     }
 
-    fn paint(&mut self, ctx: &mut PaintCtx, data: &ChessGame, _env: &Env) {
+    fn paint(&mut self, ctx: &mut PaintCtx, game: &ChessGame, _env: &Env) {
         // Draw the chessboard
         draw_board(ctx, self.board_length);
 
@@ -177,70 +178,23 @@ impl Widget<ChessGame> for ChessBoard {
                     file: File::from_idx(j).unwrap(),
                 };
 
-                match data.player {
+                match game.player {
                     // Flip i so that we draw from 1 to 8
                     Player::White => i = 7 - i,
                     // Flip j so that we draw from A to H
                     Player::Black => j = 7 - j,
                 }
 
-                let piece = data.state.pieces[chess_sq.get_idx()];
+                let piece = game.state.pieces[chess_sq.get_idx()];
                 if let Some(piece) = piece {
                     draw_piece(
-                        &data.piece_svgs[svg_idx(piece)],
+                        &game.piece_svgs[svg_idx(piece)],
                         ctx,
                         origin(i, j, self.board_length / 8.0),
                         self.board_length / 8.0,
                     );
                 }
             }
-        }
-    }
-}
-
-impl ChessBoard {
-    /// Figure out what square a click corresponds to
-    fn get_square(&self, mut click_pos: Point, player: &Player) -> Option<Square> {
-        // If Black, the origin is H1, if White, it's A8
-        let square_length = self.board_length / 8.0;
-        let origin = origin(0, 0, square_length);
-        let x_max = origin.x + self.board_length;
-        let y_max = origin.y + self.board_length;
-
-        // First, transform the Point to be White-orientated
-        if player == &Player::Black {
-            // If the coordinates from Black's perspective are (x, y), the
-            // coordinates from White's perspective are
-            // (x_max - x + origin.x, y_max - y + origin.y)
-            click_pos = Point::new(
-                x_max - click_pos.x + origin.x,
-                y_max - click_pos.y + origin.y,
-            );
-        }
-
-        // Check bounds
-        if origin.x <= click_pos.x
-            && x_max > click_pos.x
-            && origin.y <= click_pos.y
-            && y_max > click_pos.y
-        {
-            let file_idx = ((click_pos.x - origin.x) / square_length).floor() as usize;
-            let rank_idx = ((click_pos.y - origin.y) / square_length).floor() as usize;
-            let file = File::from_idx(file_idx).unwrap_or_else(|| {
-                panic!(
-                    "Already checked bounds so {} should be a valid file",
-                    file_idx
-                )
-            });
-            let rank = Rank::from_idx(7 - rank_idx).unwrap_or_else(|| {
-                panic!(
-                    "Already checked bounds so {} should be a valid file",
-                    file_idx
-                )
-            });
-            Some(Square { file, rank })
-        } else {
-            None
         }
     }
 }
@@ -327,6 +281,51 @@ fn draw_piece(svg: &SvgData, ctx: &mut PaintCtx, origin: Point, size: f64) {
     svg.to_piet(transform, ctx);
 }
 
+/// Figure out what square a click corresponds to
+fn get_square(mut click_pos: Point, board_length: f64, player: &Player) -> Option<Square> {
+    // If Black, the origin is H1, if White, it's A8
+    let square_length = board_length / 8.0;
+    let origin = origin(0, 0, square_length);
+    let x_max = origin.x + board_length;
+    let y_max = origin.y + board_length;
+
+    // First, transform the Point to be White-orientated
+    if player == &Player::Black {
+        // If the coordinates from Black's perspective are (x, y), the
+        // coordinates from White's perspective are
+        // (x_max - x + origin.x, y_max - y + origin.y)
+        click_pos = Point::new(
+            x_max - click_pos.x + origin.x,
+            y_max - click_pos.y + origin.y,
+        );
+    }
+
+    // Check bounds
+    if origin.x <= click_pos.x
+        && x_max > click_pos.x
+        && origin.y <= click_pos.y
+        && y_max > click_pos.y
+    {
+        let file_idx = ((click_pos.x - origin.x) / square_length).floor() as usize;
+        let rank_idx = ((click_pos.y - origin.y) / square_length).floor() as usize;
+        let file = File::from_idx(file_idx).unwrap_or_else(|| {
+            panic!(
+                "Already checked bounds so {} should be a valid file",
+                file_idx
+            )
+        });
+        let rank = Rank::from_idx(7 - rank_idx).unwrap_or_else(|| {
+            panic!(
+                "Already checked bounds so {} should be a valid rank",
+                rank_idx
+            )
+        });
+        Some(Square { file, rank })
+    } else {
+        None
+    }
+}
+
 // ----------------------------------------------------------------------------
 // Tests
 #[cfg(test)]
@@ -336,30 +335,29 @@ mod tests {
     fn test_get_square() {
         let board_length = 100.0 * BOARD_SCALE;
         let square_length = board_length / 8.0;
-        let board = ChessBoard {
-            board_length,
-            last_clicked: None,
-        };
         let mut origin = origin(0, 0, square_length);
         origin = Point::new(origin.x + 0.01, origin.y + 0.01);
 
         // Outside the board
-        assert_eq!(board.get_square(Point::new(0.0, 0.0), &Player::White), None);
         assert_eq!(
-            board.get_square(Point::new(100.0, 100.0), &Player::White),
+            get_square(Point::new(0.0, 0.0), board_length, &Player::White),
+            None
+        );
+        assert_eq!(
+            get_square(Point::new(100.0, 100.0), board_length, &Player::White),
             None
         );
 
         // The origin
         assert_eq!(
-            board.get_square(origin, &Player::White),
+            get_square(origin, board_length, &Player::White),
             Some(Square {
                 file: File::A,
                 rank: Rank::R8
             })
         );
         assert_eq!(
-            board.get_square(origin, &Player::Black),
+            get_square(origin, board_length, &Player::Black),
             Some(Square {
                 file: File::H,
                 rank: Rank::R1
@@ -372,14 +370,14 @@ mod tests {
             origin.y + 5.5 * square_length,
         );
         assert_eq!(
-            board.get_square(point, &Player::White),
+            get_square(point, board_length, &Player::White),
             Some(Square {
                 file: File::C,
                 rank: Rank::R3
             })
         );
         assert_eq!(
-            board.get_square(point, &Player::Black),
+            get_square(point, board_length, &Player::Black),
             Some(Square {
                 file: File::F,
                 rank: Rank::R6
@@ -399,14 +397,14 @@ mod tests {
         .iter()
         {
             assert_eq!(
-                board.get_square(*point, &Player::White),
+                get_square(*point, board_length, &Player::White),
                 Some(Square {
                     file: File::A,
                     rank: Rank::R8
                 })
             );
             assert_eq!(
-                board.get_square(*point, &Player::Black),
+                get_square(*point, board_length, &Player::Black),
                 Some(Square {
                     file: File::H,
                     rank: Rank::R1
