@@ -210,7 +210,8 @@ impl ChessBoard {
         // First, transform the Point to be White-orientated
         if player == &Player::Black {
             // If the coordinates from Black's perspective are (x, y), the
-            // coordinates from White's perspective are (x_max - x + origin.x, y_max - y + origin.y)
+            // coordinates from White's perspective are
+            // (x_max - x + origin.x, y_max - y + origin.y)
             click_pos = Point::new(
                 x_max - click_pos.x + origin.x,
                 y_max - click_pos.y + origin.y,
