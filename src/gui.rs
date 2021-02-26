@@ -8,7 +8,7 @@ use druid::{
     LifeCycleCtx, PaintCtx, Point, Rect, RenderContext, Size, UpdateCtx, Widget, WindowDesc,
 };
 
-use crate::engine::{ChessState, File, Move, Piece, PieceKind, Player, Rank, Square};
+use crate::engine::{ChessState, File, Move, MoveType, Piece, PieceKind, Player, Rank, Square};
 use std::rc::Rc;
 use std::str::FromStr;
 
@@ -108,6 +108,7 @@ impl Widget<ChessGame> for ChessBoard {
                     let chess_move = Move {
                         from,
                         to: square_clicked,
+                        move_type: MoveType::Unknown,
                     };
                     let valid = game.state.make_move(&chess_move);
                     let valid_str = if valid { "valid" } else { "invalid" };
