@@ -8,7 +8,9 @@ use druid::{
     LifeCycleCtx, PaintCtx, Point, Rect, RenderContext, Size, UpdateCtx, Widget, WindowDesc,
 };
 
-use crate::engine::{ChessState, File, Move, MoveType, Piece, PieceKind, Player, Rank, Square};
+use crate::engine::{
+    ChessState, File, Move, MoveResult, MoveType, Piece, PieceKind, Player, Rank, Square,
+};
 use std::rc::Rc;
 use std::str::FromStr;
 
@@ -110,20 +112,26 @@ impl Widget<ChessGame> for ChessBoard {
                         to: square_clicked,
                         move_type: MoveType::Unknown,
                     };
-                    let valid = game.state.make_move(&chess_move);
-                    let valid_str = if valid { "valid" } else { "invalid" };
-                    println!("{:?} is {}", chess_move, valid_str);
-                    if valid {
-                        // Reorient board for two players
-                        if game.mode == Mode::TwoPlayer {
-                            game.player = game.player.swap();
-                        }
+                    let result = game.state.make_move(&chess_move);
+                    println!("{}: {}", chess_move, result);
+                    match result {
+                        MoveResult::Continue => {
+                            // Reorient board for two players
+                            if game.mode == Mode::TwoPlayer {
+                                game.player = game.player.swap();
+                            }
 
-                        // Redraw the board
-                        ctx.request_paint();
-                        game.last_clicked = None;
-                    } else {
-                        game.last_clicked = Some(square_clicked);
+                            // Redraw the board
+                            ctx.request_paint();
+                            game.last_clicked = None;
+                        }
+                        MoveResult::Stalemate | MoveResult::Win(_) => {
+                            // Redraw the board
+                            ctx.request_paint();
+                        }
+                        MoveResult::Illegal => {
+                            game.last_clicked = Some(square_clicked);
+                        }
                     }
                 } else {
                     game.last_clicked = Some(square_clicked);

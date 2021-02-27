@@ -65,8 +65,8 @@ impl ChessState {
 
     /// If passed a valid move, update the state accordingly
     ///
-    /// Return whether or not the move was valid.
-    pub fn make_move(&mut self, chess_move: &Move) -> bool {
+    /// Return the MoveResult.
+    pub fn make_move(&mut self, chess_move: &Move) -> MoveResult {
         let move_type = self.get_move_type(&chess_move);
         if move_type != MoveType::Illegal {
             self.make_move_unchecked(&Move {
@@ -74,9 +74,20 @@ impl ChessState {
                 to: chess_move.to,
                 move_type,
             });
-            true
+            if self.generate_all_legal_moves(&self.player_turn).is_empty() {
+                // The oppposing player cannot make any moves
+                if self.is_player_in_check(&self.player_turn) != 0 {
+                    // Checkmate
+                    MoveResult::Win(self.player_turn.swap())
+                } else {
+                    // Stalemate
+                    MoveResult::Stalemate
+                }
+            } else {
+                MoveResult::Continue
+            }
         } else {
-            false
+            MoveResult::Illegal
         }
     }
 
@@ -107,8 +118,12 @@ impl ChessState {
     /// - checking for self-captures
     /// - all pawn moves (promotion TODO)
     fn get_move_type(&self, chess_move: &Move) -> MoveType {
-        println!("All legal moves: {:?}", self.generate_all_legal_moves(&self.player_turn));
-        if let Some(categorised_move) = self.generate_all_legal_moves(&self.player_turn)
+        println!(
+            "All legal moves: {:?}",
+            self.generate_all_legal_moves(&self.player_turn)
+        );
+        if let Some(categorised_move) = self
+            .generate_all_legal_moves(&self.player_turn)
             .iter()
             .find(|m| m == &chess_move)
         {
@@ -683,6 +698,34 @@ impl Hash for Move {
     }
 }
 
+/// The result of a move
+pub enum MoveResult {
+    /// The move was not legal
+    Illegal,
+    /// The game is now a stalemate
+    Stalemate,
+    /// Checkmate! Specify the player who won
+    Win(Player),
+    /// Nothing special, the game continues
+    Continue,
+}
+
+impl std::fmt::Display for MoveResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use MoveResult::*;
+        let iden = match self {
+            Illegal => "That move was illegal",
+            Stalemate => "The game is now a stalemate",
+            Win(colour) => match colour {
+                Player::White => "Checkmate! The game is a win for white",
+                Player::Black => "Checkmate! The game is a win for black",
+            },
+            Continue => "",
+        };
+        write!(f, "{}", iden)
+    }
+}
+
 /// A vector on the board, as specified by a signed number of file and rank
 /// steps
 #[derive(Copy, Clone, Debug)]
@@ -804,8 +847,6 @@ mod tests {
         println!("Done with 3");
         assert_eq!(generate_moves(4, &state), 197_281);
         println!("Done with 4");
-        // Takes about a minute, and gets the wrong answer - 258 too low.
-        // This will pass when en passant is implemented.
         assert_eq!(generate_moves(5, &state), 4_865_609);
     }
 }
