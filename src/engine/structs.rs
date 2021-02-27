@@ -107,6 +107,17 @@ impl ChessState {
             .get_idx()] = None;
         }
 
+        if piece.kind == PieceKind::Pawn
+            && chess_move.to.rank.get_from_perspective(&self.player_turn) == Rank::R8
+        {
+            // Promote to a queen for now
+            // TODO: allow choice of promotion piece
+            self.pieces[chess_move.to.get_idx()] = Some(Piece {
+                kind: PieceKind::Queen,
+                player: self.player_turn,
+            });
+        }
+
         self.en_passant_square = get_en_passant_square(chess_move, &piece);
 
         self.player_turn = self.player_turn.swap();
@@ -662,8 +673,6 @@ pub enum MoveType {
     EnPassant,
     /// A castle
     Castle,
-    /// Promotion
-    Promotion,
 }
 
 /// Representation of a chess move
