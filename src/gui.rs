@@ -104,7 +104,6 @@ impl Widget<ChessGame> for ChessBoard {
         // TODO: for Mode::Computer, call into the engine to get the response
         if let Event::MouseDown(mouse) = event {
             if let Some(square_clicked) = get_square(mouse.pos, self.board_length, &game.player) {
-                println!("Clicked square {:?}", square_clicked);
                 if let Some(from) = game.last_clicked {
                     // Make the move
                     let chess_move = Move {

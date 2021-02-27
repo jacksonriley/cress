@@ -12,8 +12,10 @@ pub struct ChessState {
     pub pieces: [Option<Piece>; 64],
     /// Which player's turn it is
     pub player_turn: Player,
-    /// What castling rights are available to each player ([White, Black])
-    pub castling_rights: [CastlingRights; 2],
+    /// What castling rights are available to White
+    pub white_castling_rights: CastlingRights,
+    /// What castling rights are available to Black
+    pub black_castling_rights: CastlingRights,
     /// If `Some`, the square on which a pawn may be taken en passant
     pub en_passant_square: Option<Square>,
     /// How many moves have been taken
@@ -57,7 +59,8 @@ impl ChessState {
         Self {
             pieces,
             player_turn: Player::White,
-            castling_rights: [CastlingRights::Both, CastlingRights::Both],
+            white_castling_rights: CastlingRights::Both,
+            black_castling_rights: CastlingRights::Both,
             en_passant_square: None,
             move_number: 0,
         }
@@ -98,6 +101,7 @@ impl ChessState {
             .expect("Move is pseudo-legal so the from square must be a piece");
         self.pieces[chess_move.to.get_idx()] = Some(piece);
         self.pieces[chess_move.from.get_idx()] = None;
+
         if chess_move.move_type == MoveType::EnPassant {
             // Also need to remove the pawn taken en passant
             self.pieces[Square {
@@ -105,6 +109,17 @@ impl ChessState {
                 rank: Rank::R5.get_from_perspective(&piece.player),
             }
             .get_idx()] = None;
+        } else if chess_move.move_type == MoveType::Castle {
+            // Need to move the rook as well
+            if chess_move.to.file == File::G {
+                // Kingside - move the H rook
+                let rook = self.pieces[chess_move.to.right(1).unwrap().get_idx()].take();
+                self.pieces[chess_move.to.left(1).unwrap().get_idx()] = rook;
+            } else {
+                // Queenside - move the A rook
+                let rook = self.pieces[chess_move.to.left(2).unwrap().get_idx()].take();
+                self.pieces[chess_move.to.right(1).unwrap().get_idx()] = rook;
+            }
         }
 
         if piece.kind == PieceKind::Pawn
@@ -118,6 +133,8 @@ impl ChessState {
             });
         }
 
+        self.modify_castling_rights(&chess_move, &piece);
+
         self.en_passant_square = get_en_passant_square(chess_move, &piece);
 
         self.player_turn = self.player_turn.swap();
@@ -129,10 +146,6 @@ impl ChessState {
     /// - checking for self-captures
     /// - all pawn moves (promotion TODO)
     fn get_move_type(&self, chess_move: &Move) -> MoveType {
-        println!(
-            "All legal moves: {:?}",
-            self.generate_all_legal_moves(&self.player_turn)
-        );
         if let Some(categorised_move) = self
             .generate_all_legal_moves(&self.player_turn)
             .iter()
@@ -163,11 +176,35 @@ impl ChessState {
         let king_square = Square::from_idx(king_idx)
             .expect("self.pieces has a length of 64 so all indices are valid");
 
+        self.square_is_attacked(&king_square, &player)
+    }
+
+    /// Whether or not a square is attacked
+    ///
+    /// Returns the number of attackers
+    fn square_is_attacked(&self, square: &Square, player: &Player) -> usize {
         // If any of the moves that the other player can make are a capture of
-        // the king, the king is in check.
-        self.generate_all_pseudo_moves(&player.swap())
+        // this square, it is attacked.
+        // In order to check pawn threats, make sure there's a piece on the
+        // square in question (doesn't matter what kind)
+        let mut cloned_state = self.clone();
+        cloned_state.pieces[square.get_idx()] = Some(Piece {
+            kind: PieceKind::King,
+            player: *player,
+        });
+
+        // Bit of a hack to avoid an infinite loop - don't consider castling as
+        // you can't capture by castling.
+        // The infinite loop arises when checking if castling can be included
+        // in the pseudo moves, as then you need to check if any of the
+        // castling squares are attacked.
+        cloned_state.white_castling_rights = CastlingRights::None;
+        cloned_state.black_castling_rights = CastlingRights::None;
+
+        cloned_state
+            .generate_all_pseudo_moves(&player.swap())
             .iter()
-            .filter(|m| m.to == king_square)
+            .filter(|m| m.to == *square)
             .count()
     }
 
@@ -201,6 +238,75 @@ impl ChessState {
         }
         all_legal_moves
     }
+
+    /// Update castling rights following a move
+    ///
+    /// Relevant scenarios are:
+    ///  - a king move from the starting square
+    ///  - a rook move from a starting square
+    ///  - the capture of a rook on a starting square
+    fn modify_castling_rights(&mut self, chess_move: &Move, piece: &Piece) {
+        // King move
+        if piece.kind == PieceKind::King {
+            match self.player_turn {
+                Player::White => self.white_castling_rights = CastlingRights::None,
+                Player::Black => self.black_castling_rights = CastlingRights::None,
+            }
+        } else if piece.kind == PieceKind::Rook {
+            // Rook move
+            if chess_move.from
+                == (Square {
+                    file: File::A,
+                    rank: Rank::R1.get_from_perspective(&self.player_turn),
+                })
+            {
+                match self.player_turn {
+                    Player::White => self.white_castling_rights.no_queenside(),
+                    Player::Black => self.black_castling_rights.no_queenside(),
+                };
+            } else if chess_move.from
+                == (Square {
+                    file: File::H,
+                    rank: Rank::R1.get_from_perspective(&self.player_turn),
+                })
+            {
+                match self.player_turn {
+                    Player::White => self.white_castling_rights.no_kingside(),
+                    Player::Black => self.black_castling_rights.no_kingside(),
+                };
+            }
+        }
+
+        // Rook capture
+        if chess_move.move_type
+            == MoveType::Capture(Piece {
+                kind: PieceKind::Rook,
+                player: self.player_turn.swap(),
+            })
+        {
+            if chess_move.to
+                == (Square {
+                    file: File::A,
+                    rank: Rank::R8.get_from_perspective(&self.player_turn),
+                })
+            {
+                match self.player_turn {
+                    Player::White => self.black_castling_rights.no_queenside(),
+                    Player::Black => self.white_castling_rights.no_queenside(),
+                };
+            } else if chess_move.to
+                == (Square {
+                    file: File::H,
+                    rank: Rank::R8.get_from_perspective(&self.player_turn),
+                })
+            {
+                match self.player_turn {
+                    Player::White => self.black_castling_rights.no_kingside(),
+                    Player::Black => self.white_castling_rights.no_kingside(),
+                };
+            }
+        }
+    }
 }
 
 /// What rights a player has to castle
@@ -216,6 +322,30 @@ pub enum CastlingRights {
     Both,
 }
 
+impl CastlingRights {
+    /// Remove queenside castling rights
+    fn no_queenside(&mut self) {
+        use CastlingRights::*;
+        *self = match self {
+            Both => Kingside,
+            Queenside => None,
+            Kingside => Kingside,
+            None => None,
+        };
+    }
+
+    /// Remove kingside castling rights
+    fn no_kingside(&mut self) {
+        use CastlingRights::*;
+        *self = match self {
+            Both => Queenside,
+            Queenside => Queenside,
+            Kingside => None,
+            None => None,
+        };
+    }
+}
+
 /// The representation of a piece
 #[derive(Clone, Copy, PartialEq, Eq, druid::Data, Debug, Hash)]
 pub struct Piece {
@@ -228,7 +358,6 @@ pub struct Piece {
 impl Piece {
     /// Get all moves that this piece can take
     ///
-    /// - TODO: En passant
     /// - TODO: Castling
     /// - TODO: Checks (should maybe be done before?)
     fn all_moves(&self, state: &ChessState, position: &Square) -> HashSet<Move> {
@@ -340,14 +469,80 @@ impl Piece {
                 &state.pieces,
                 &self.player,
             ),
-            PieceKind::King => gen_moves(
-                position,
-                &KING_MOVES,
-                false,
-                true,
-                &state.pieces,
-                &self.player,
-            ),
+            PieceKind::King => {
+                let mut all_simple_moves = gen_moves(
+                    position,
+                    &KING_MOVES,
+                    false,
+                    true,
+                    &state.pieces,
+                    &self.player,
+                );
+
+                // Check castling
+                let rights = match self.player {
+                    Player::White => &state.white_castling_rights,
+                    Player::Black => &state.black_castling_rights,
+                };
+                if rights == &CastlingRights::Queenside || rights == &CastlingRights::Both {
+                    // Check if we can castle queenside
+                    let no_check_squares = [
+                        *position,
+                        position.left(1).unwrap(),
+                        position.left(2).unwrap(),
+                    ];
+                    
+                    let empty_squares = [
+                        position.left(1).unwrap(),
+                        position.left(2).unwrap(),
+                        position
+                        .left(3)
+                        .unwrap(),
+                    ];
+                    
+                    if empty_squares
+                        .iter()
+                        .all(|sq| state.pieces[sq.get_idx()].is_none())
+                        && no_check_squares
+                            .iter()
+                            .all(|sq| state.square_is_attacked(sq, &self.player) == 0)
+                    {
+                        all_simple_moves.insert(Move {
+                            from: *position,
+                            to: position.left(2).unwrap(),
+                            move_type: MoveType::Castle,
+                        });
+                    }
+                }
+                if rights == &CastlingRights::Kingside || rights == &CastlingRights::Both {
+                    // Check if we can castle kingside
+                    let no_check_squares = [
+                        *position,
+                        position.right(1).unwrap(),
+                        position.right(2).unwrap(),
+                    ];
+
+                    let empty_squares = [
+                        position.right(1).unwrap(),
+                        position.right(2).unwrap(),
+                    ];
+
+                    if empty_squares
+                    .iter()
+                        .all(|sq| state.pieces[sq.get_idx()].is_none())
+                        && no_check_squares
+                            .iter()
+                            .all(|sq| state.square_is_attacked(sq, &self.player) == 0)
+                    {
+                        all_simple_moves.insert(Move {
+                            from: *position,
+                            to: position.right(2).unwrap(),
+                            move_type: MoveType::Castle,
+                        });
+                    }
+                }
+                all_simple_moves
+            }
             PieceKind::Queen => gen_moves(
                 position,
                 &KING_MOVES,
@@ -502,6 +697,34 @@ impl Square {
         } else {
             None
         }
+    }
+
+    fn right(&self, num_hops: usize) -> Option<Square> {
+        &Vec2 {
+            delta_f: num_hops as isize,
+            delta_r: 0,
+        } + self
+    }
+
+    fn left(&self, num_hops: usize) -> Option<Square> {
+        &Vec2 {
+            delta_f: -1 * num_hops as isize,
+            delta_r: 0,
+        } + self
+    }
+
+    fn up(&self, num_hops: usize) -> Option<Square> {
+        &Vec2 {
+            delta_f: 0,
+            delta_r: num_hops as isize,
+        } + self
+    }
+
+    fn down(&self, num_hops: usize) -> Option<Square> {
+        &Vec2 {
+            delta_f: 0,
+            delta_r: -1 * num_hops as isize,
+        } + self
     }
 }
 
