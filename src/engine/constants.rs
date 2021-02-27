@@ -1,6 +1,6 @@
 //! Constants for use in the core engine
 
-use super::structs::Vec2;
+use super::square::Vec2;
 
 /// The one-square diagonal moves
 pub const DIAGONALS: [Vec2; 4] = [

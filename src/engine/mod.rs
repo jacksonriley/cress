@@ -1,5 +1,10 @@
 //! Core engine implementation.
 
-mod structs;
-pub use structs::*;
 mod constants;
+mod piece;
+mod square;
+mod structs;
+
+pub use piece::{Move, MoveType, Piece, PieceKind};
+pub use square::{File, Rank, Square};
+pub use structs::*;

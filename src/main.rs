@@ -18,6 +18,5 @@ fn main() {
         )
         .get_matches();
     let mode = gui::Mode::from_str(matches.value_of("mode").unwrap_or("comp")).unwrap();
-    dbg!(&mode);
     gui::main(mode);
 }
