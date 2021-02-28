@@ -200,6 +200,25 @@ impl Piece {
             ),
         }
     }
+
+    /// Construct a Piece from the FEN descriptor
+    ///
+    /// ```
+    /// use cress::engine::{Piece, PieceKind, Player};
+    /// assert_eq!(Piece::from_fen_char(&'N'), Some(Piece{kind: PieceKind::Knight, player: Player::White}));
+    /// assert_eq!(Piece::from_fen_char(&'q'), Some(Piece{kind: PieceKind::Queen, player: Player::Black}));
+    /// assert_eq!(Piece::from_fen_char(&'w'), None);
+    /// ```
+    pub fn from_fen_char(c: &char) -> Option<Self> {
+        PieceKind::from_fen_char(c).map(|kind| Piece {
+            kind,
+            player: if c.is_ascii_uppercase() {
+                Player::White
+            } else {
+                Player::Black
+            },
+        })
+    }
 }
 
 /// Generate all moves possible given
@@ -290,6 +309,28 @@ pub enum PieceKind {
     Rook,
     King,
     Queen,
+}
+
+impl PieceKind {
+    /// Construct a PieceKind from the FEN descriptor (case-insensitive)
+    ///
+    /// ```
+    /// use cress::engine::PieceKind;
+    /// assert_eq!(PieceKind::from_fen_char(&'N'), Some(PieceKind::Knight));
+    /// assert_eq!(PieceKind::from_fen_char(&'r'), Some(PieceKind::Rook));
+    /// assert_eq!(PieceKind::from_fen_char(&'x'), None);
+    /// ```
+    pub fn from_fen_char(c: &char) -> Option<PieceKind> {
+        match c.to_ascii_uppercase() {
+            'P' => Some(PieceKind::Pawn),
+            'N' => Some(PieceKind::Knight),
+            'B' => Some(PieceKind::Bishop),
+            'R' => Some(PieceKind::Rook),
+            'K' => Some(PieceKind::King),
+            'Q' => Some(PieceKind::Queen),
+            _ => None,
+        }
+    }
 }
 
 /// Representation of a chess move

@@ -4,9 +4,10 @@ use super::piece::{Move, MoveType, Piece, PieceKind};
 use super::square::{File, Rank, Square};
 use std::collections::HashSet;
 use std::hash::Hash;
+use std::str::FromStr;
 
 /// All non-graphical game state
-#[derive(Clone, druid::Data)]
+#[derive(Clone, druid::Data, Debug, PartialEq)]
 pub struct ChessState {
     /// An array, running from A1 (index 0) to H8 (index 63), of [`Option<Piece>`]
     #[data(same_fn = "PartialEq::eq")]
@@ -19,8 +20,11 @@ pub struct ChessState {
     pub black_castling_rights: CastlingRights,
     /// If `Some`, the square on which a pawn may be taken en passant
     pub en_passant_square: Option<Square>,
-    /// How many half-moves have been taken
-    pub move_number: u16,
+    /// How many total full-moves have been taken
+    pub full_move_number: u16,
+    /// How many half-moves have been taken since the last capture or pawn
+    /// advance
+    pub half_move_number: u8,
 }
 
 impl ChessState {
@@ -63,8 +67,127 @@ impl ChessState {
             white_castling_rights: CastlingRights::Both,
             black_castling_rights: CastlingRights::Both,
             en_passant_square: None,
-            move_number: 0,
+            half_move_number: 0,
+            full_move_number: 1,
         }
+    }
+
+    /// Construct a ChessState from a FEN string, if in valid format.
+    ///
+    /// For example, the initial position is represented as:
+    /// rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+    ///  - lowercase letters for Black pieces
+    ///  - uppercase letters for White pieces
+    ///  - slash for next rank down
+    ///  - number to skip that number of files
+    ///
+    ///  - which player is to move
+    ///
+    ///  - castling rights - uppercase for White, lowercase for Black, a hyphen
+    ///    if neither side can castle
+    ///
+    ///  - the en passant square, if there is one. If not, a hyphen
+    ///
+    ///  - the halfmove clock (number of halfmoves since the last capture or
+    ///    pawn advance)
+    ///
+    /// - the fullmove number (starts at 1, incremented after Black's move)
+    pub fn from_fen(fen: &str) -> Result<Self, String> {
+        let toks: Vec<&str> = fen.split(' ').collect();
+        if toks.len() != 6 {
+            return Err("Invalid FEN format".to_string());
+        }
+
+        // Piece positions
+        let pieces: Vec<char> = toks[0].chars().collect();
+        let mut piece_array = [None; 64];
+        // The pieces are ordered from A8 -> H8, A7-> H7 etc.
+        let mut file = File::A;
+        let mut rank = Rank::R8;
+        for c in pieces {
+            match c {
+                '1'..='8' => {
+                    // Skip this number of files
+                    let digit = c
+                        .to_digit(10)
+                        .ok_or(format!("Could not parse {} as digit", c))?
+                        as isize;
+                    if file.get_idx() + digit as usize == 8 {
+                        // Skip the rest of the rank - the next character should be '/'
+                        continue;
+                    }
+                    file = (&file + &digit).ok_or(format!("Invalid file skip length: {}", c))?
+                }
+                '/' => {
+                    // Next rank down
+                    rank = (&rank + &-1).ok_or("Went out of bounds when parsing FEN: /")?;
+                    file = File::A;
+                }
+                _ => {
+                    // Anything else should be a piece
+                    piece_array[Square { file, rank }.get_idx()] = Some(
+                        Piece::from_fen_char(&c)
+                            .ok_or(format!("{} is not a valid piece character", c))?,
+                    );
+                    // Increment the file (not if at the right of the board)
+                    if file != File::H {
+                        file = (&file + &1)
+                            .ok_or(format!("Went out of bounds when parsing FEN: {}", c))?;
+                    }
+                }
+            }
+        }
+
+        // Player turn
+        let player_turn: Player = match toks[1] {
+            "w" => Player::White,
+            "b" => Player::Black,
+            _ => return Err(format!("Got invalid player: {}", toks[1])),
+        };
+
+        // Castling rights
+        let mut white_castling_rights = CastlingRights::None;
+        let mut black_castling_rights = CastlingRights::None;
+        if toks[2].contains("K") {
+            white_castling_rights.add_kingside();
+        }
+        if toks[2].contains("Q") {
+            white_castling_rights.add_queenside();
+        }
+        if toks[2].contains("k") {
+            black_castling_rights.add_kingside();
+        }
+        if toks[2].contains("q") {
+            black_castling_rights.add_queenside();
+        }
+
+        // En passant square
+        let en_passant_square;
+        if toks[3] == "-" {
+            en_passant_square = None;
+        } else {
+            en_passant_square = Some(Square::from_str(toks[3])?);
+        }
+
+        // Half-move number
+        let half_move_number = toks[4]
+            .parse::<u8>()
+            .map_err(|_| format!("Invalid half-move number: {}", toks[4]))?;
+
+        // Full-move number
+        let full_move_number = toks[5]
+            .parse::<u16>()
+            .map_err(|_| format!("Invalid full-move number: {}", toks[5]))?;
+
+        Ok(ChessState {
+            pieces: piece_array,
+            player_turn,
+            white_castling_rights,
+            black_castling_rights,
+            en_passant_square,
+            full_move_number,
+            half_move_number,
+        })
     }
 
     /// If passed a valid move, update the state accordingly
@@ -97,7 +220,7 @@ impl ChessState {
 
     /// Update the state following a move, without checking whether or not the
     /// move is legal first.
-    fn make_move_unchecked(&mut self, chess_move: &Move) {
+    pub fn make_move_unchecked(&mut self, chess_move: &Move) {
         let piece = self.pieces[chess_move.from.get_idx()]
             .expect("Move is pseudo-legal so the from square must be a piece");
         self.pieces[chess_move.to.get_idx()] = Some(piece);
@@ -139,8 +262,6 @@ impl ChessState {
         self.en_passant_square = get_en_passant_square(chess_move, &piece);
 
         self.player_turn = self.player_turn.swap();
-
-        self.move_number += 1;
     }
 
     /// Get the MoveType for a move of unknown type
@@ -228,7 +349,7 @@ impl ChessState {
 
     /// Generate all of the legal moves that a player can make.
     // This can definitely be a lot faster!
-    fn generate_all_legal_moves(&self, player: &Player) -> HashSet<Move> {
+    pub fn generate_all_legal_moves(&self, player: &Player) -> HashSet<Move> {
         let mut all_legal_moves = HashSet::new();
         let all_pseudo_moves = self.generate_all_pseudo_moves(player);
         for chess_move in all_pseudo_moves.into_iter() {
@@ -313,7 +434,7 @@ impl ChessState {
 }
 
 /// What rights a player has to castle
-#[derive(Clone, druid::Data, PartialEq)]
+#[derive(Clone, druid::Data, PartialEq, Debug)]
 pub enum CastlingRights {
     /// No rights :(
     None,
@@ -345,6 +466,28 @@ impl CastlingRights {
             Queenside => Queenside,
             Kingside => None,
             None => None,
+        };
+    }
+
+    /// Add queenside castling rights
+    fn add_queenside(&mut self) {
+        use CastlingRights::*;
+        *self = match self {
+            Both => Both,
+            Queenside => Queenside,
+            Kingside => Both,
+            None => Queenside,
+        };
+    }
+
+    /// Add kingside castling rights
+    fn add_kingside(&mut self) {
+        use CastlingRights::*;
+        *self = match self {
+            Both => Both,
+            Queenside => Both,
+            Kingside => Kingside,
+            None => Kingside,
         };
     }
 }
@@ -454,5 +597,85 @@ mod tests {
         assert_eq!(generate_moves(4, &state), 197_281);
         // Takes about a minute with the current code
         // assert_eq!(generate_moves(5, &state), 4_865_609);
+    }
+
+    #[test]
+    fn test_position_two() -> Result<(), String> {
+        let state = ChessState::from_fen(
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+        )?;
+        assert_eq!(generate_moves(1, &state), 48);
+        assert_eq!(generate_moves(2, &state), 2039);
+        assert_eq!(generate_moves(3, &state), 97_862);
+        // TODO: Wrong because of promotions (nothing other than queen done yet)
+        // assert_eq!(generate_moves(4, &state), 4_085_603);
+        Ok(())
+    }
+
+    #[test]
+    fn test_position_three() -> Result<(), String> {
+        let state = ChessState::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1")?;
+        assert_eq!(generate_moves(1, &state), 14);
+        assert_eq!(generate_moves(2, &state), 191);
+        assert_eq!(generate_moves(3, &state), 2812);
+        assert_eq!(generate_moves(4, &state), 43_238);
+        // Correct but slow
+        // assert_eq!(generate_moves(5, &state), 674_624);
+        Ok(())
+    }
+
+    #[test]
+    fn test_position_four() -> Result<(), String> {
+        let state = ChessState::from_fen(
+            "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
+        )?;
+        assert_eq!(generate_moves(1, &state), 6);
+        // TODO: Wrong (promotions)
+        // assert_eq!(generate_moves(2, &state), 264);
+        // assert_eq!(generate_moves(3, &state), 9467);
+        // assert_eq!(generate_moves(4, &state), 422_333);
+        Ok(())
+    }
+
+    #[test]
+    fn test_position_five() -> Result<(), String> {
+        let state =
+            ChessState::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8")?;
+        // TODO: Wrong (promotions)
+        // assert_eq!(generate_moves(1, &state), 44);
+        // assert_eq!(generate_moves(2, &state), 1486);
+        // assert_eq!(generate_moves(3, &state), 62379);
+        Ok(())
+    }
+
+    #[test]
+    fn test_initial_fen() {
+        // Test that the initial state FEN is parsed correctly
+        let initial_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        assert_eq!(
+            ChessState::from_fen(initial_fen),
+            Ok(ChessState::new_game())
+        );
+
+        // Test that the FEN after 1.e4 is parsed correctly
+        let mut after_e4 = ChessState::new_game();
+        let pawn = after_e4.pieces[Square {
+            file: File::E,
+            rank: Rank::R2,
+        }
+        .get_idx()]
+        .take();
+        after_e4.pieces[Square {
+            file: File::E,
+            rank: Rank::R4,
+        }
+        .get_idx()] = pawn;
+        after_e4.en_passant_square = Some(Square {
+            file: File::E,
+            rank: Rank::R3,
+        });
+        after_e4.player_turn = Player::Black;
+        let after_e4_fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+        assert_eq!(ChessState::from_fen(after_e4_fen), Ok(after_e4));
     }
 }

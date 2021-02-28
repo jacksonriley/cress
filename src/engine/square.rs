@@ -129,6 +129,40 @@ impl std::fmt::Display for Square {
     }
 }
 
+impl std::str::FromStr for Square {
+    type Err = String;
+    /// Construct a Square from its string representation
+    ///
+    /// ```
+    /// use cress::engine::{Square, File, Rank};
+    /// use std::str::FromStr;
+    /// assert_eq!(Square::from_str("h5"), Ok(Square{file: File::H, rank: Rank::R5}));
+    /// assert!(Square::from_str("h9").is_err());
+    /// ```
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Should be two characters - a lowercase letter (a-h), and a digit
+        // (1-8)
+        let mut chars = s.chars();
+        let file_char = chars.next().ok_or("Empty string!")?;
+        let rank_char = chars.next().ok_or("No char for rank!")?;
+        if !chars.as_str().is_empty() {
+            return Err(format!("More characters than expected: {}", s));
+        }
+
+        Ok(Square {
+            file: File::from_idx(file_char as usize - b'a' as usize)
+                .ok_or(format!("Invalid file character: {}", file_char))?,
+            rank: Rank::from_idx(
+                rank_char
+                    .to_digit(10)
+                    .ok_or(format!("Invalid digit: {}", rank_char))? as usize
+                    - 1,
+            )
+            .ok_or(format!("Invalid rank_digit: {}", file_char))?,
+        })
+    }
+}
+
 /// No way, it's all the different files
 #[derive(Copy, Clone, Debug, PartialEq, Eq, druid::Data, Hash)]
 #[allow(missing_docs)]
@@ -192,6 +226,19 @@ impl std::fmt::Display for File {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let letter: char = (self.get_idx() as u8 + b'A') as char;
         write!(f, "{}", letter)
+    }
+}
+
+impl std::ops::Add<&isize> for &File {
+    type Output = Option<File>;
+
+    fn add(self, other: &isize) -> Option<File> {
+        let sum = self.get_idx() as isize + other;
+        if sum < 0 {
+            None
+        } else {
+            File::from_idx(sum as usize)
+        }
     }
 }
 
@@ -272,6 +319,19 @@ impl Rank {
 impl std::fmt::Display for Rank {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.get_idx() + 1)
+    }
+}
+
+impl std::ops::Add<&isize> for &Rank {
+    type Output = Option<Rank>;
+
+    fn add(self, other: &isize) -> Option<Rank> {
+        let sum = self.get_idx() as isize + other;
+        if sum < 0 {
+            None
+        } else {
+            Rank::from_idx(sum as usize)
+        }
     }
 }
 
