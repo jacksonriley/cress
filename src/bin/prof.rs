@@ -4,7 +4,8 @@ use cress::engine::ChessState;
 
 fn main() {
     let state = ChessState::new_game();
-    assert_eq!(generate_moves(4, &state), 197_281);
+    // Hyperfine - 1.882s
+    println!("{}", generate_moves(4, &state));
 }
 
 fn generate_moves(depth: u8, state: &ChessState) -> u64 {

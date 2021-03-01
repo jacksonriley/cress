@@ -3,7 +3,7 @@
 use super::Player;
 
 /// That's right, it's a square
-#[derive(Copy, Clone, PartialEq, Eq, druid::Data, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, druid::Data, Debug)]
 pub struct Square {
     /// This square's file
     pub file: File,
@@ -164,7 +164,7 @@ impl std::str::FromStr for Square {
 }
 
 /// No way, it's all the different files
-#[derive(Copy, Clone, Debug, PartialEq, Eq, druid::Data, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, druid::Data)]
 #[allow(missing_docs)]
 pub enum File {
     A,
@@ -243,7 +243,7 @@ impl std::ops::Add<&isize> for &File {
 }
 
 /// You'd better believe these bad boys are all the possible ranks
-#[derive(Copy, Clone, Debug, PartialEq, Eq, druid::Data, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, druid::Data)]
 #[allow(missing_docs)]
 pub enum Rank {
     R1,

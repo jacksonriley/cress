@@ -5,11 +5,8 @@ use super::constants::{DIAGONALS, KING_MOVES, KNIGHT_MOVES, NON_DIAGONALS};
 use super::square::{Rank, Square, Vec2};
 use super::structs::{CastlingRights, ChessState, Player};
 
-use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
-
 /// The representation of a piece
-#[derive(Clone, Copy, PartialEq, Eq, druid::Data, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, druid::Data, Debug)]
 pub struct Piece {
     /// Which player owns this piece
     pub player: Player,
@@ -19,7 +16,7 @@ pub struct Piece {
 
 impl Piece {
     /// Get all moves that this piece can take
-    pub fn all_moves(&self, state: &ChessState, position: &Square) -> HashSet<Move> {
+    pub fn all_moves(&self, state: &ChessState, position: &Square) -> Vec<Move> {
         match self.kind {
             PieceKind::Pawn => {
                 // White pawns move up, black pawns move down
@@ -46,7 +43,7 @@ impl Piece {
                 }
 
                 // Pawns capture one square diagonally
-                let mut capture_moves = HashSet::new();
+                let mut capture_moves = Vec::new();
                 for possible_capture in [
                     Vec2 {
                         delta_f: -1,
@@ -67,7 +64,7 @@ impl Piece {
                             && state.pieces[sq.get_idx()].unwrap().player != self.player
                         {
                             // Normal capture
-                            capture_moves.insert(Move {
+                            capture_moves.push(Move {
                                 from: *position,
                                 to: sq,
                                 move_type: MoveType::Capture(state.pieces[sq.get_idx()].unwrap()),
@@ -75,7 +72,7 @@ impl Piece {
                         } else if let Some(en_passant_square) = state.en_passant_square {
                             if en_passant_square == sq {
                                 // Capture en passant
-                                capture_moves.insert(Move {
+                                capture_moves.push(Move {
                                     from: *position,
                                     to: sq,
                                     move_type: MoveType::EnPassant,
@@ -157,7 +154,7 @@ impl Piece {
                             .iter()
                             .all(|sq| state.square_is_attacked(sq, &self.player) == 0)
                     {
-                        all_simple_moves.insert(Move {
+                        all_simple_moves.push(Move {
                             from: *position,
                             to: position.left(2).unwrap(),
                             move_type: MoveType::Castle,
@@ -181,7 +178,7 @@ impl Piece {
                             .iter()
                             .all(|sq| state.square_is_attacked(sq, &self.player) == 0)
                     {
-                        all_simple_moves.insert(Move {
+                        all_simple_moves.push(Move {
                             from: *position,
                             to: position.right(2).unwrap(),
                             move_type: MoveType::Castle,
@@ -239,15 +236,15 @@ fn generate_moves(
     can_capture: bool,
     pieces: &[Option<Piece>],
     player: &Player,
-) -> HashSet<Move> {
-    let mut all_moves = HashSet::new();
+) -> Vec<Move> {
+    let mut all_moves = Vec::new();
     for direction in directions.iter() {
         if let Some(to) = direction + position {
             // Square is inside the board
             let capture =
                 pieces[to.get_idx()].is_some() && pieces[to.get_idx()].unwrap().player != *player;
             if pieces[to.get_idx()].is_none() || capture && can_capture {
-                all_moves.insert(Move {
+                all_moves.push(Move {
                     from: *position,
                     to,
                     move_type: if capture {
@@ -276,7 +273,7 @@ fn generate_moves(
                 let capture = pieces[to.get_idx()].is_some()
                     && pieces[to.get_idx()].unwrap().player != *player;
                 if pieces[to.get_idx()].is_none() || capture && can_capture {
-                    all_moves.insert(Move {
+                    all_moves.push(Move {
                         from: *position,
                         to,
                         move_type: if capture {
@@ -300,7 +297,7 @@ fn generate_moves(
 }
 
 /// All of the possible kinds of pieces (colour-independent)
-#[derive(Clone, Copy, PartialEq, Eq, Debug, druid::Data, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, druid::Data)]
 #[allow(missing_docs)]
 pub enum PieceKind {
     Pawn,
@@ -356,17 +353,9 @@ impl PartialEq for Move {
     }
 }
 
-impl Eq for Move {}
-
-impl Hash for Move {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.from.hash(state);
-        self.to.hash(state);
-    }
-}
 
 /// The type of move
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum MoveType {
     /// A (possibly illegal) move attempted by a non-computer player. During
     /// move validation, a move of this type is first converted into a move of

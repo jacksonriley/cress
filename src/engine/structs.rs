@@ -2,8 +2,6 @@
 
 use super::piece::{Move, MoveType, Piece, PieceKind};
 use super::square::{File, Rank, Square};
-use std::collections::HashSet;
-use std::hash::Hash;
 use std::str::FromStr;
 
 /// All non-graphical game state
@@ -335,8 +333,8 @@ impl ChessState {
     /// Generate all of the moves that a player can make, disregarding whether
     /// or not that move would put the player into check.
     // TODO: speed this up by keeping map of piece -> location
-    fn generate_all_pseudo_moves(&self, player: &Player) -> HashSet<Move> {
-        let mut all_pseudo_moves = HashSet::new();
+    fn generate_all_pseudo_moves(&self, player: &Player) -> Vec<Move> {
+        let mut all_pseudo_moves = Vec::new();
         for (idx, maybe_piece) in self.pieces.iter().enumerate() {
             if let Some(piece) = maybe_piece {
                 if &piece.player == player {
@@ -349,15 +347,15 @@ impl ChessState {
 
     /// Generate all of the legal moves that a player can make.
     // This can definitely be a lot faster!
-    pub fn generate_all_legal_moves(&self, player: &Player) -> HashSet<Move> {
-        let mut all_legal_moves = HashSet::new();
+    pub fn generate_all_legal_moves(&self, player: &Player) -> Vec<Move> {
+        let mut all_legal_moves = Vec::new();
         let all_pseudo_moves = self.generate_all_pseudo_moves(player);
         for chess_move in all_pseudo_moves.into_iter() {
             let mut new_state = self.clone();
             new_state.make_move_unchecked(&chess_move);
             if new_state.is_player_in_check(player) == 0 {
                 // The king is not in check - this is a legal move
-                all_legal_moves.insert(chess_move);
+                all_legal_moves.push(chess_move);
             }
         }
         all_legal_moves
@@ -493,7 +491,7 @@ impl CastlingRights {
 }
 
 /// The two opposing colours
-#[derive(druid::Data, Clone, PartialEq, Copy, Eq, Debug, Hash)]
+#[derive(druid::Data, Clone, PartialEq, Copy, Eq, Debug)]
 #[allow(missing_docs)]
 pub enum Player {
     White,
