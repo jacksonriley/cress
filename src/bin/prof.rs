@@ -4,7 +4,7 @@ use cress::engine::ChessState;
 
 fn main() {
     let state = ChessState::new_game();
-    // Hyperfine - 1.882s
+    // Hyperfine - 144ms
     println!("{}", generate_moves(4, &state));
 }
 

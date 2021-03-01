@@ -152,7 +152,7 @@ impl Piece {
                         .all(|sq| state.pieces[sq.get_idx()].is_none())
                         && no_check_squares
                             .iter()
-                            .all(|sq| state.square_is_attacked(sq, &self.player) == 0)
+                            .all(|sq| !state.square_is_attacked(sq, &self.player))
                     {
                         all_simple_moves.push(Move {
                             from: *position,
@@ -176,7 +176,7 @@ impl Piece {
                         .all(|sq| state.pieces[sq.get_idx()].is_none())
                         && no_check_squares
                             .iter()
-                            .all(|sq| state.square_is_attacked(sq, &self.player) == 0)
+                            .all(|sq| !state.square_is_attacked(sq, &self.player))
                     {
                         all_simple_moves.push(Move {
                             from: *position,
@@ -352,7 +352,6 @@ impl PartialEq for Move {
         self.from == other.from && self.to == other.to
     }
 }
-
 
 /// The type of move
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]

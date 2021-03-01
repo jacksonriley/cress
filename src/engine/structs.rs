@@ -1,7 +1,8 @@
 //! Structures and types used in the main chess engine.
 
+use super::constants::{DIAGONALS, KNIGHT_MOVES, NON_DIAGONALS};
 use super::piece::{Move, MoveType, Piece, PieceKind};
-use super::square::{File, Rank, Square};
+use super::square::{File, Rank, Square, Vec2};
 use std::str::FromStr;
 
 /// All non-graphical game state
@@ -146,16 +147,16 @@ impl ChessState {
         // Castling rights
         let mut white_castling_rights = CastlingRights::None;
         let mut black_castling_rights = CastlingRights::None;
-        if toks[2].contains("K") {
+        if toks[2].contains('K') {
             white_castling_rights.add_kingside();
         }
-        if toks[2].contains("Q") {
+        if toks[2].contains('Q') {
             white_castling_rights.add_queenside();
         }
-        if toks[2].contains("k") {
+        if toks[2].contains('k') {
             black_castling_rights.add_kingside();
         }
-        if toks[2].contains("q") {
+        if toks[2].contains('q') {
             black_castling_rights.add_queenside();
         }
 
@@ -201,7 +202,7 @@ impl ChessState {
             });
             if self.generate_all_legal_moves(&self.player_turn).is_empty() {
                 // The oppposing player cannot make any moves
-                if self.is_player_in_check(&self.player_turn) != 0 {
+                if self.is_player_in_check(&self.player_turn) {
                     // Checkmate
                     MoveResult::Win(self.player_turn.swap())
                 } else {
@@ -280,9 +281,7 @@ impl ChessState {
     }
 
     /// Whether or not the player is in check
-    ///
-    /// Returns the number of checking pieces
-    fn is_player_in_check(&self, player: &Player) -> usize {
+    fn is_player_in_check(&self, player: &Player) -> bool {
         // Find the king - (TODO keep map of pieces to locations to make this
         // faster)
         let king_idx = self
@@ -302,32 +301,93 @@ impl ChessState {
     }
 
     /// Whether or not a square is attacked
-    ///
-    /// Returns the number of attackers
-    pub fn square_is_attacked(&self, square: &Square, player: &Player) -> usize {
-        // If any of the moves that the other player can make are a capture of
-        // this square, it is attacked.
-        // In order to check pawn threats, make sure there's a piece on the
-        // square in question (doesn't matter what kind)
-        let mut cloned_state = self.clone();
-        cloned_state.pieces[square.get_idx()] = Some(Piece {
-            kind: PieceKind::King,
-            player: *player,
-        });
+    pub fn square_is_attacked(&self, square: &Square, player: &Player) -> bool {
+        let enemy = player.swap();
+        // Check knight threats
+        for direction in KNIGHT_MOVES.iter() {
+            if let Some(to) = direction + square {
+                if self.pieces[to.get_idx()]
+                    == Some(Piece {
+                        kind: PieceKind::Knight,
+                        player: enemy,
+                    })
+                {
+                    return true;
+                }
+            }
+        }
 
-        // Bit of a hack to avoid an infinite loop - don't consider castling as
-        // you can't capture by castling.
-        // The infinite loop arises when checking if castling can be included
-        // in the pseudo moves, as then you need to check if any of the
-        // castling squares are attacked.
-        cloned_state.white_castling_rights = CastlingRights::None;
-        cloned_state.black_castling_rights = CastlingRights::None;
+        // Check pawn threats
+        let direction: isize = if player == &Player::White { 1 } else { -1 };
+        let possible_pawn_threats = [
+            Vec2 {
+                delta_f: 1,
+                delta_r: direction,
+            },
+            Vec2 {
+                delta_f: -1,
+                delta_r: direction,
+            },
+        ];
+        for direction in possible_pawn_threats.iter() {
+            if let Some(to) = direction + square {
+                if self.pieces[to.get_idx()]
+                    == Some(Piece {
+                        kind: PieceKind::Pawn,
+                        player: enemy,
+                    })
+                {
+                    return true;
+                }
+            }
+        }
 
-        cloned_state
-            .generate_all_pseudo_moves(&player.swap())
-            .iter()
-            .filter(|m| m.to == *square)
-            .count()
+        // Check sliding pieces
+        for direction in DIAGONALS.iter() {
+            let maybe_piece = self.get_first_piece_in_direction(square, direction);
+            if maybe_piece
+                == Some(Piece {
+                    kind: PieceKind::Bishop,
+                    player: enemy,
+                })
+                || maybe_piece
+                    == Some(Piece {
+                        kind: PieceKind::Queen,
+                        player: enemy,
+                    })
+            {
+                return true;
+            }
+        }
+        for direction in NON_DIAGONALS.iter() {
+            let maybe_piece = self.get_first_piece_in_direction(square, direction);
+            if maybe_piece
+                == Some(Piece {
+                    kind: PieceKind::Rook,
+                    player: enemy,
+                })
+                || maybe_piece
+                    == Some(Piece {
+                        kind: PieceKind::Queen,
+                        player: enemy,
+                    })
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn get_first_piece_in_direction(&self, square: &Square, direction: &Vec2) -> Option<Piece> {
+        let mut current = *square;
+        while let Some(to) = direction + &current {
+            if let Some(piece) = self.pieces[to.get_idx()] {
+                return Some(piece);
+            }
+            current = to;
+        }
+        None
     }
 
     /// Generate all of the moves that a player can make, disregarding whether
@@ -353,7 +413,7 @@ impl ChessState {
         for chess_move in all_pseudo_moves.into_iter() {
             let mut new_state = self.clone();
             new_state.make_move_unchecked(&chess_move);
-            if new_state.is_player_in_check(player) == 0 {
+            if !new_state.is_player_in_check(player) {
                 // The king is not in check - this is a legal move
                 all_legal_moves.push(chess_move);
             }
@@ -594,7 +654,7 @@ mod tests {
         assert_eq!(generate_moves(3, &state), 8902);
         assert_eq!(generate_moves(4, &state), 197_281);
         // Takes about a minute with the current code
-        // assert_eq!(generate_moves(5, &state), 4_865_609);
+        assert_eq!(generate_moves(5, &state), 4_865_609);
     }
 
     #[test]
