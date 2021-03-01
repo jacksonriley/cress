@@ -118,6 +118,11 @@ impl Widget<ChessGame> for ChessBoard {
                             // Reorient board for two players
                             if game.mode == Mode::TwoPlayer {
                                 game.player = game.player.swap();
+                            } else {
+                                // Find the best move for the computer
+                                let best_response = game.state.get_best_move(3);
+                                let result = game.state.make_move(&best_response);
+                                println!("Computer: {}: {}", best_response, result);
                             }
 
                             // Redraw the board

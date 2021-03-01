@@ -2,6 +2,7 @@
 
 use super::constants::{DIAGONALS, KNIGHT_MOVES, NON_DIAGONALS};
 use super::piece::{Move, MoveType, Piece, PieceKind};
+use super::search::minimax;
 use super::square::{File, Rank, Square, Vec2};
 use std::str::FromStr;
 
@@ -488,6 +489,40 @@ impl ChessState {
                 };
             }
         }
+    }
+
+    /// Find the best move in the current position, via a minimax search.
+    ///
+    /// This chooses the move which maximises the evaluation for the player to
+    /// move (so more negative is better for Black), assuming that the opponent
+    /// always makes the best move for them.
+    pub fn get_best_move(&self, depth: u8) -> Move {
+        let legal_moves = self.generate_all_legal_moves(&self.player_turn);
+        let maximise = self.player_turn == Player::White;
+        let mut best_eval = if maximise { f64::MIN } else { f64::MAX };
+        let mut best_move = Move {
+            from: Square::from_str("a1").unwrap(),
+            to: Square::from_str("a1").unwrap(),
+            move_type: MoveType::Resign,
+        };
+        for chess_move in legal_moves {
+            let mut new_state = self.clone();
+            // Make move
+            new_state.make_move_unchecked(&chess_move);
+            let eval = minimax(&new_state, depth, !maximise);
+            if maximise {
+                if eval > best_eval {
+                    best_eval = eval;
+                    best_move = chess_move;
+                }
+            } else {
+                if eval < best_eval {
+                    best_eval = eval;
+                    best_move = chess_move;
+                }
+            }
+        }
+        best_move
     }
 }
 

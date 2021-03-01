@@ -378,7 +378,7 @@ impl PieceKind {
     pub fn get_material_value(&self) -> f64 {
         match self {
             PieceKind::King => 20000.0,
-            PieceKind::Queen => 900.,
+            PieceKind::Queen => 900.0,
             PieceKind::Rook => 500.0,
             PieceKind::Bishop => 330.0,
             PieceKind::Knight => 320.0,
@@ -427,6 +427,8 @@ pub enum MoveType {
     EnPassant,
     /// A castle
     Castle,
+    /// Resignation
+    Resign,
 }
 
 #[cfg(test)]

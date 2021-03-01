@@ -3,6 +3,7 @@
 mod constants;
 mod evaluate;
 mod piece;
+mod search;
 mod square;
 mod structs;
 

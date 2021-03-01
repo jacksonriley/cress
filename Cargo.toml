@@ -3,6 +3,7 @@ name = "cress"
 version = "0.1.0"
 authors = ["Jackson Riley <jackson.riley@btinternet.com>"]
 edition = "2018"
+default-run = "cress"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
