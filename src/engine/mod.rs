@@ -1,6 +1,7 @@
 //! Core engine implementation.
 
 mod constants;
+mod evaluate;
 mod piece;
 mod square;
 mod structs;

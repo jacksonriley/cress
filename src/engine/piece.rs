@@ -1,7 +1,7 @@
 //! Representation of pieces and moves, as well as logic about how the pieces
 //! move
 
-use super::constants::{DIAGONALS, KING_MOVES, KNIGHT_MOVES, NON_DIAGONALS};
+use super::constants::*;
 use super::square::{Rank, Square, Vec2};
 use super::structs::{CastlingRights, ChessState, Player};
 
@@ -216,6 +216,51 @@ impl Piece {
             },
         })
     }
+
+    /// Get the positional bonus for a given piece and position
+    ///
+    /// These are corrections to the simple material value of a piece
+    pub fn get_positional_bonus(&self, idx: usize, endgame: bool) -> f64 {
+        let weights = match self.kind {
+            PieceKind::King => match self.player {
+                Player::White => {
+                    if endgame {
+                        WHITE_KING_ENDGAME_POSITION_WEIGHTS
+                    } else {
+                        WHITE_KING_POSITION_WEIGHTS
+                    }
+                }
+                Player::Black => {
+                    if endgame {
+                        BLACK_KING_ENDGAME_POSITION_WEIGHTS
+                    } else {
+                        BLACK_KING_POSITION_WEIGHTS
+                    }
+                }
+            },
+            PieceKind::Queen => match self.player {
+                Player::White => WHITE_QUEEN_POSITION_WEIGHTS,
+                Player::Black => BLACK_QUEEN_POSITION_WEIGHTS,
+            },
+            PieceKind::Rook => match self.player {
+                Player::White => WHITE_ROOK_POSITION_WEIGHTS,
+                Player::Black => BLACK_ROOK_POSITION_WEIGHTS,
+            },
+            PieceKind::Bishop => match self.player {
+                Player::White => WHITE_BISHOP_POSITION_WEIGHTS,
+                Player::Black => BLACK_BISHOP_POSITION_WEIGHTS,
+            },
+            PieceKind::Knight => match self.player {
+                Player::White => WHITE_KNIGHT_POSITION_WEIGHTS,
+                Player::Black => BLACK_KNIGHT_POSITION_WEIGHTS,
+            },
+            PieceKind::Pawn => match self.player {
+                Player::White => WHITE_PAWN_POSITION_WEIGHTS,
+                Player::Black => BLACK_PAWN_POSITION_WEIGHTS,
+            },
+        };
+        weights[idx]
+    }
 }
 
 /// Generate all moves possible given
@@ -326,6 +371,18 @@ impl PieceKind {
             'K' => Some(PieceKind::King),
             'Q' => Some(PieceKind::Queen),
             _ => None,
+        }
+    }
+
+    /// Basic piece material values, in centipawns
+    pub fn get_material_value(&self) -> f64 {
+        match self {
+            PieceKind::King => 20000.0,
+            PieceKind::Queen => 900.,
+            PieceKind::Rook => 500.0,
+            PieceKind::Bishop => 330.0,
+            PieceKind::Knight => 320.0,
+            PieceKind::Pawn => 100.0,
         }
     }
 }
