@@ -25,7 +25,7 @@ const BOARD_SCALE: f64 = 0.9;
 /// Main GUI function.
 ///
 /// Creates the window, loads the chess piece svg files, and launches the app.
-pub fn main(mode: Mode) {
+pub fn main(mode: Mode, depth: u8) {
     let main_window = WindowDesc::new(ui_builder)
         .title("Cress")
         .window_size((700.0, 700.0));
@@ -57,6 +57,7 @@ pub fn main(mode: Mode) {
         player,
         mode,
         last_clicked: None,
+        depth,
     };
 
     AppLauncher::with_window(main_window)
@@ -79,6 +80,8 @@ struct ChessGame {
     mode: Mode,
     /// The last square that was clicked, if any.
     last_clicked: Option<Square>,
+    /// The number of half moves to search to
+    depth: u8,
 }
 
 /// The root widget - implements [`Widget`]<[`ChessGame`]>
@@ -120,7 +123,7 @@ impl Widget<ChessGame> for ChessBoard {
                                 game.player = game.player.swap();
                             } else {
                                 // Find the best move for the computer
-                                let best_response = game.state.get_best_move(3);
+                                let best_response = game.state.get_best_move(game.depth - 1).expect("The result was not a stalemate or a win, so there should be at least one legal move");
                                 let result = game.state.make_move(&best_response);
                                 println!("Computer: {}: {}", best_response, result);
                             }

@@ -5,14 +5,14 @@ use super::piece::PieceKind;
 use super::structs::{ChessState, Player};
 
 pub trait Evaluate {
-    fn evaluate(&self) -> f64;
+    fn evaluate(&self) -> i32;
 }
 
 impl Evaluate for ChessState {
-    fn evaluate(&self) -> f64 {
+    fn evaluate(&self) -> i32 {
         let endgame = is_endgame(&self);
 
-        let mut eval = 0.0;
+        let mut eval = 0;
         for idx in 0..64 {
             if let Some(piece) = self.pieces[idx] {
                 let mut piece_eval = piece.kind.get_material_value();

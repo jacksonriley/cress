@@ -16,7 +16,15 @@ fn main() {
                 .possible_values(&["2p", "comp"])
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("depth")
+                .help("Number of half moves to look ahead")
+                .short("d")
+                .long("depth")
+                .takes_value(true),
+        )
         .get_matches();
     let mode = gui::Mode::from_str(matches.value_of("mode").unwrap_or("comp")).unwrap();
-    gui::main(mode);
+    let depth: u8 = matches.value_of("depth").unwrap_or("4").parse().unwrap();
+    gui::main(mode, depth);
 }

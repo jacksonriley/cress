@@ -496,32 +496,32 @@ impl ChessState {
     /// This chooses the move which maximises the evaluation for the player to
     /// move (so more negative is better for Black), assuming that the opponent
     /// always makes the best move for them.
-    pub fn get_best_move(&self, depth: u8) -> Move {
+    ///
+    /// If there are no legal moves, return None.
+    pub fn get_best_move(&self, depth: u8) -> Option<Move> {
         let legal_moves = self.generate_all_legal_moves(&self.player_turn);
         let maximise = self.player_turn == Player::White;
-        let mut best_eval = if maximise { f64::MIN } else { f64::MAX };
-        let mut best_move = Move {
-            from: Square::from_str("a1").unwrap(),
-            to: Square::from_str("a1").unwrap(),
-            move_type: MoveType::Resign,
-        };
+        let mut best_eval = if maximise { i32::MIN } else { i32::MAX };
+
+        // Initialise the best move to the first legal move (if one exists) so
+        // that _some_ move is picked, even if all moves lead to checkmate.
+        let mut best_move = legal_moves.get(0).copied();
         for chess_move in legal_moves {
             let mut new_state = self.clone();
             // Make move
             new_state.make_move_unchecked(&chess_move);
-            let eval = minimax(&new_state, depth, !maximise);
+            let eval = minimax(&new_state, depth, !maximise, i32::MIN, i32::MAX);
             if maximise {
                 if eval > best_eval {
                     best_eval = eval;
-                    best_move = chess_move;
+                    best_move = Some(chess_move);
                 }
-            } else {
-                if eval < best_eval {
-                    best_eval = eval;
-                    best_move = chess_move;
-                }
+            } else if eval < best_eval {
+                best_eval = eval;
+                best_move = Some(chess_move);
             }
         }
+        println!("Evaluation: {}", best_eval);
         best_move
     }
 }

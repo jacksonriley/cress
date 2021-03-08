@@ -220,7 +220,7 @@ impl Piece {
     /// Get the positional bonus for a given piece and position
     ///
     /// These are corrections to the simple material value of a piece
-    pub fn get_positional_bonus(&self, idx: usize, endgame: bool) -> f64 {
+    pub fn get_positional_bonus(&self, idx: usize, endgame: bool) -> i32 {
         let weights = match self.kind {
             PieceKind::King => match self.player {
                 Player::White => {
@@ -375,20 +375,20 @@ impl PieceKind {
     }
 
     /// Basic piece material values, in centipawns
-    pub fn get_material_value(&self) -> f64 {
+    pub fn get_material_value(&self) -> i32 {
         match self {
-            PieceKind::King => 20000.0,
-            PieceKind::Queen => 900.0,
-            PieceKind::Rook => 500.0,
-            PieceKind::Bishop => 330.0,
-            PieceKind::Knight => 320.0,
-            PieceKind::Pawn => 100.0,
+            PieceKind::King => 20000,
+            PieceKind::Queen => 900,
+            PieceKind::Rook => 500,
+            PieceKind::Bishop => 330,
+            PieceKind::Knight => 320,
+            PieceKind::Pawn => 100,
         }
     }
 }
 
 /// Representation of a chess move
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Move {
     /// The square that the piece has been moved from
     pub from: Square,
@@ -427,8 +427,6 @@ pub enum MoveType {
     EnPassant,
     /// A castle
     Castle,
-    /// Resignation
-    Resign,
 }
 
 #[cfg(test)]
