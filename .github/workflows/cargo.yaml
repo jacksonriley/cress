@@ -1,0 +1,20 @@
+name: cargo
+on: [push, pull_request]
+jobs:
+  cargo-test:
+    runs-on: macos-latest
+    steps:
+      # Checkout the repo
+      - uses: actions/checkout@v2
+      # Cache built dependencies
+      - uses: Swatinem/rust-cache@v1
+      # Compile and run tests
+      - run: cargo test
+
+  cargo-fmt:
+    runs-on: macos-latest
+    steps:
+      # Checkout the repo
+      - uses: actions/checkout@v2
+      # Test that the code is formatted correctly
+      - run: cargo fmt -- --check

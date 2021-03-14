@@ -75,15 +75,15 @@ mod tests {
     #[test]
     fn test_basic_eval() {
         let mut state = ChessState::new_game();
-        assert_eq!(state.evaluate(), 0.0);
+        assert_eq!(state.evaluate(), 0);
 
         // Remove the black queen
         state.pieces[Square::from_str("d8").unwrap().get_idx()] = None;
-        assert_eq!(state.evaluate(), 895.0);
+        assert_eq!(state.evaluate(), 895);
 
         // Advance a pawn to a better location
         let pawn = state.pieces[Square::from_str("e2").unwrap().get_idx()].take();
         state.pieces[Square::from_str("e4").unwrap().get_idx()] = pawn;
-        assert_eq!(state.evaluate(), 935.0);
+        assert_eq!(state.evaluate(), 935);
     }
 }
